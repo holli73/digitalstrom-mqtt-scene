@@ -1,15 +1,14 @@
-name: digitalSTROM MQTT
-version: "2.4.0-haos.1"
-slug: digitalstrom_mqtt
-description: Unofficial community App connecting digitalSTROM to Home Assistant through MQTT Discovery.
-url: "https://github.com/gaetancollaud/digitalstrom-mqtt/tree/master/home-assistant-app"
+name: digitalSTROM MQTT (scenes)
+version: "2.4.0-scene.1"
+slug: digitalstrom_mqtt_scene
+description: digitalSTROM MQTT bridge with scene events, built from the holli73/digitalstrom-mqtt-scene fork.
+url: "https://github.com/holli73/digitalstrom-mqtt-scene/tree/master/home-assistant-app"
 arch:
   - aarch64
   - amd64
 init: false
 services:
   - mqtt:want
-image: "docker.io/gaetancollaud/digitalstrom-mqtt"
 ports:
   8080/tcp: null
 options:
