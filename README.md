@@ -119,7 +119,7 @@ The topic format is as follows for the meterings:
 
 The topic format is as follows for the scene events:
 
-`{prefix}/scenes/{zoneName}/{group}/event`
+`{prefix}/scenes/{zoneName}/{sceneName}/event` (see [Scene events](#scene-events))
 
 The server status topic is
 
@@ -128,34 +128,29 @@ The server status topic is
 ### Scene events
 
 Every scene call in digitalSTROM (wall switch, app, timer, apartment scenes like *absent* or *sleeping*, ...) is
-published as a non-retained JSON message on `{prefix}/scenes/{zoneName}/{group}/event`, for instance:
+published as a non-retained JSON message, in the same format as version 1.x:
+
+`{prefix}/scenes/{zoneName}/{sceneName}/event`
 
 ```json
-{
-  "event_type": "preset1",
-  "event": "callScene",
-  "zone_id": 1234,
-  "zone": "Living Room",
-  "group_id": 1,
-  "group": "lights",
-  "scene_id": 5,
-  "scene": "preset1",
-  "scene_name": "Bright",
-  "forced": false,
-  "origin_id": "..."
-}
+{"ZoneId":1234,"ZoneName":"Living Room","GroupId":1,"GroupName":"light","SceneId":5,"SceneName":"Bright"}
 ```
 
-* `group` is the digitalSTROM color (`all`, `lights`, `shades`, `heating`, `audio`, `video`, `security`, `access`,
-  `joker`, ...). Apartment-wide scenes (`present`, `absent`, `sleeping`, `wakeup`, `door_bell`, `panic`, ...) are
-  published with zone `apartment` and group `all`.
-* `scene` is the standard digitalSTROM name of the scene number (`preset0` = off, `preset1` = on, `preset2`,
-  ..., `scene_<id>` for numbers without a standard name). `scene_name` is the custom name configured in digitalSTROM,
-  if any.
-* `undoScene` events are published with `"event_type": "undo"`.
+`{sceneName}` is the custom scene name configured in digitalSTROM, or the scene number if the scene has no name.
+`GroupName` is one of `light`, `shade`, `climate`, `audio`, `video`, `safety`, `access`, `joker` or `unknown`.
+Zones without a name are called `unnamed-zone-{id}`.
 
-With Home Assistant discovery enabled, one [MQTT event entity](https://www.home-assistant.io/integrations/event.mqtt/)
-is created per zone and group (plus one for apartment scenes). They can be used directly as automation triggers.
+For Home Assistant, every scene call and undo is also published on `{prefix}/scene_events/{zoneId}/{group}/event`:
+
+```json
+{"event_type":"preset1","event":"callScene","zone_id":1234,"zone":"Living Room","group_id":1,"group":"lights",
+ "scene_id":5,"scene":"preset1","scene_name":"Bright","forced":false}
+```
+
+With Home Assistant discovery enabled, these topics are exposed as one
+[MQTT event entity](https://www.home-assistant.io/integrations/event.mqtt/) per zone and group (plus one for apartment
+scenes). `event_type` is the standard name of the scene number (`preset0` = off, `preset1` = on, `preset2`, ...,
+`scene_<id>` for numbers without a standard name) or `undo` for `undoScene`.
 
 The Smarthome API does not expose scene calls, so this feature uses the legacy JSON event API of the dSS
 (`json/event/subscribe`), logging in with the configured API key (`json/system/loginApplication`). Set

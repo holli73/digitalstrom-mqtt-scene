@@ -15,6 +15,7 @@ import (
 
 const (
 	scenes          string = "scenes"
+	sceneEvents     string = "scene_events"
 	sceneUndoEvent  string = "undo"
 	apartmentZoneId int    = 0
 	broadcastGroup  int    = 0
@@ -35,6 +36,18 @@ var sceneGroupNames = map[int]string{
 	10: "ventilation",
 	11: "window",
 	12: "recirculation",
+}
+
+// Group names used by the scene events of version 1.x.
+var sceneGroupNamesV1 = map[int]string{
+	1: "light",
+	2: "shade",
+	3: "climate",
+	4: "audio",
+	5: "video",
+	6: "safety",
+	7: "access",
+	8: "joker",
 }
 
 // Smarthome API zone applications mapped to the digitalSTROM group id.
@@ -120,7 +133,20 @@ var standardSceneNames = map[int]string{
 
 const maxSceneId = 127
 
-// ScenePayload is the JSON message published on every scene call.
+// SceneEventV1 is the scene call message of version 1.x, published on
+// scenes/{zoneName}/{sceneName or sceneId}/event. Field names are kept as is
+// (no JSON tags) to stay compatible with existing consumers.
+type SceneEventV1 struct {
+	ZoneId    int
+	ZoneName  string
+	GroupId   int
+	GroupName string
+	SceneId   int
+	SceneName string
+}
+
+// ScenePayload is the JSON message published for the Home Assistant event
+// entities on scene_events/{zoneId}/{group}/event.
 type ScenePayload struct {
 	EventType string `json:"event_type"`
 	Event     string `json:"event"`
@@ -136,7 +162,8 @@ type ScenePayload struct {
 }
 
 // Scenes Module forwards the scene calls of digitalSTROM to MQTT. Each call
-// is published (not retained) on scenes/{zone}/{group}/event.
+// is published (not retained) in the format of version 1.x and in the format
+// of the Home Assistant event entities.
 type ScenesModule struct {
 	mqttClient mqtt.Client
 	dsClient   digitalstrom.Client
@@ -179,12 +206,21 @@ func (c *ScenesModule) onSceneEvent(event digitalstrom.SceneEvent) {
 		Str("scene", payload.Scene).
 		Msg("Scene event")
 
+	c.publishEvent(c.sceneEventTopic(event.ZoneId, payload.Group), payload)
+	// Version 1.x only published scene calls.
+	if event.Event == digitalstrom.EventTypeCallScene {
+		v1 := c.buildV1Payload(event, payload.SceneName)
+		c.publishEvent(c.sceneEventV1Topic(v1), v1)
+	}
+}
+
+func (c *ScenesModule) publishEvent(topic string, payload interface{}) {
 	message, err := json.Marshal(payload)
 	if err != nil {
 		log.Error().Err(err).Msg("Error serializing scene event")
 		return
 	}
-	topic := c.mqttClient.GetFullTopic(c.sceneEventTopic(payload.Zone, payload.Group))
+	topic = c.mqttClient.GetFullTopic(topic)
 	// Events must never be retained, otherwise they would be replayed on
 	// every reconnect.
 	t := c.mqttClient.RawClient().Publish(topic, mqtt.QOS, false, message)
@@ -194,6 +230,47 @@ func (c *ScenesModule) onSceneEvent(event digitalstrom.SceneEvent) {
 			log.Error().Err(t.Error()).Str("topic", topic).Msg("Error publishing scene event")
 		}
 	}()
+}
+
+func (c *ScenesModule) buildV1Payload(event digitalstrom.SceneEvent, sceneName string) SceneEventV1 {
+	// Like version 1.x, use the zone name of the legacy API and fall back to
+	// the Smarthome API only if it can't be retrieved.
+	var zoneName string
+	var err error
+	if c.listener != nil {
+		zoneName, err = c.listener.ZoneName(event.ZoneId)
+	}
+	if c.listener == nil || err != nil {
+		log.Debug().Err(err).Msg("Unable to get zone name from the legacy API")
+		zoneName = c.registryZoneName(event.ZoneId)
+	}
+	if zoneName == "" {
+		zoneName = "unnamed-zone-" + strconv.Itoa(event.ZoneId)
+	}
+	groupName, ok := sceneGroupNamesV1[event.GroupId]
+	if !ok {
+		groupName = "unknown"
+	}
+	return SceneEventV1{
+		ZoneId:    event.ZoneId,
+		ZoneName:  zoneName,
+		GroupId:   event.GroupId,
+		GroupName: groupName,
+		SceneId:   event.SceneId,
+		SceneName: sceneName,
+	}
+}
+
+func (c *ScenesModule) sceneEventV1Topic(event SceneEventV1) string {
+	zoneName := event.ZoneName
+	if c.normalizeDeviceName {
+		zoneName = normalizeForTopicName(zoneName)
+	}
+	sceneNameOrId := event.SceneName
+	if sceneNameOrId == "" {
+		sceneNameOrId = strconv.Itoa(event.SceneId)
+	}
+	return scenes + "/" + zoneName + "/" + sceneNameOrId + "/" + mqtt.Event
 }
 
 func (c *ScenesModule) buildPayload(event digitalstrom.SceneEvent) ScenePayload {
@@ -229,21 +306,25 @@ func (c *ScenesModule) zoneName(zoneId int) string {
 	if zoneId == apartmentZoneId {
 		return "apartment"
 	}
-	if zones, err := c.dsRegistry.GetZones(); err == nil {
-		for _, zone := range zones {
-			if zone.ZoneId == strconv.Itoa(zoneId) && zone.Attributes.Name != "" {
-				return zone.Attributes.Name
-			}
-		}
+	if name := c.registryZoneName(zoneId); name != "" {
+		return name
 	}
 	return fmt.Sprintf("zone_%d", zoneId)
 }
 
-func (c *ScenesModule) sceneEventTopic(zoneName string, group string) string {
-	if c.normalizeDeviceName {
-		zoneName = normalizeForTopicName(zoneName)
+func (c *ScenesModule) registryZoneName(zoneId int) string {
+	if zones, err := c.dsRegistry.GetZones(); err == nil {
+		for _, zone := range zones {
+			if zone.ZoneId == strconv.Itoa(zoneId) {
+				return zone.Attributes.Name
+			}
+		}
 	}
-	return path.Join(scenes, zoneName, group, mqtt.Event)
+	return ""
+}
+
+func (c *ScenesModule) sceneEventTopic(zoneId int, group string) string {
+	return path.Join(sceneEvents, strconv.Itoa(zoneId), group, mqtt.Event)
 }
 
 func groupName(groupId int) string {
@@ -318,7 +399,7 @@ func (c *ScenesModule) eventEntity(zoneId int, groupId int) homeassistant.Discov
 				Name:     group + " scene",
 				UniqueId: deviceId + "_" + objectId,
 			},
-			StateTopic: c.mqttClient.GetFullTopic(c.sceneEventTopic(zoneName, group)),
+			StateTopic: c.mqttClient.GetFullTopic(c.sceneEventTopic(zoneId, group)),
 			EventTypes: sceneEventTypes(),
 			Icon:       "mdi:palette",
 		},

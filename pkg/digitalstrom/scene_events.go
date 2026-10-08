@@ -51,6 +51,8 @@ type SceneEventListener interface {
 	// SceneName returns the user defined name of a scene, or an empty string
 	// if the scene has no custom name.
 	SceneName(zoneId int, groupId int, sceneId int) (string, error)
+	// ZoneName returns the name of a zone as known by the legacy JSON API.
+	ZoneName(zoneId int) (string, error)
 }
 
 type legacyResponse struct {
@@ -103,6 +105,10 @@ func (c *client) SceneEventsStop() {
 
 func (c *client) SceneName(zoneId int, groupId int, sceneId int) (string, error) {
 	return c.sceneEvents.sceneName(zoneId, groupId, sceneId)
+}
+
+func (c *client) ZoneName(zoneId int) (string, error) {
+	return c.sceneEvents.zoneName(zoneId)
 }
 
 func (s *sceneEvents) start(callback SceneEventCallback) error {
@@ -293,6 +299,39 @@ func (s *sceneEvents) sceneName(zoneId int, groupId int, sceneId int) (string, e
 	}
 	_ = json.Unmarshal(result, &response)
 	name = strings.TrimSpace(response.Name)
+	s.mu.Lock()
+	s.nameCache[key] = name
+	s.mu.Unlock()
+	return name, nil
+}
+
+func (s *sceneEvents) zoneName(zoneId int) (string, error) {
+	key := fmt.Sprintf("zone/%d", zoneId)
+	s.mu.Lock()
+	name, ok := s.nameCache[key]
+	s.mu.Unlock()
+	if ok {
+		return name, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	token, err := s.currentToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	params := url.Values{}
+	params.Set("id", strconv.Itoa(zoneId))
+	params.Set("token", token)
+	result, err := s.request(ctx, "json/zone/getName", params)
+	if err != nil {
+		return "", err
+	}
+	var response struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(result, &response)
+	name = response.Name
 	s.mu.Lock()
 	s.nameCache[key] = name
 	s.mu.Unlock()

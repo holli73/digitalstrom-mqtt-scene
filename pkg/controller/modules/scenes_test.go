@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"encoding/json"
 	"path"
 	"testing"
 
@@ -19,11 +20,15 @@ func (r *sceneRegistryStub) GetZones() ([]digitalstrom.Zone, error) {
 
 type sceneListenerStub struct {
 	digitalstrom.Client
-	names map[int]string
+	names     map[int]string
+	zoneNames map[int]string
 }
 
 func (l *sceneListenerStub) SceneEventsStart(digitalstrom.SceneEventCallback) error { return nil }
 func (l *sceneListenerStub) SceneEventsStop()                                       {}
+func (l *sceneListenerStub) ZoneName(zoneId int) (string, error) {
+	return l.zoneNames[zoneId], nil
+}
 func (l *sceneListenerStub) SceneName(_ int, _ int, sceneId int) (string, error) {
 	return l.names[sceneId], nil
 }
@@ -37,7 +42,10 @@ func newSceneTestModule() *ScenesModule {
 		}},
 		enabled:             true,
 		normalizeDeviceName: true,
-		listener:            &sceneListenerStub{names: map[int]string{17: "Movie"}},
+		listener: &sceneListenerStub{
+			names:     map[int]string{17: "Movie"},
+			zoneNames: map[int]string{1234: "Wohn Zimmer"},
+		},
 	}
 }
 
@@ -57,7 +65,7 @@ func TestScenesBuildPayload(t *testing.T) {
 	if payload != expected {
 		t.Fatalf("unexpected payload %+v", payload)
 	}
-	if topic := module.sceneEventTopic(payload.Zone, payload.Group); topic != path.Join("scenes", "Living_Room", "lights", "event") {
+	if topic := module.sceneEventTopic(payload.ZoneId, payload.Group); topic != path.Join("scene_events", "1234", "lights", "event") {
 		t.Fatalf("unexpected topic %s", topic)
 	}
 }
@@ -105,7 +113,7 @@ func TestScenesHomeAssistantEntities(t *testing.T) {
 	}
 
 	lights := configs[2].Config.(*homeassistant.EventConfig)
-	if lights.StateTopic != "digitalstrom/scenes/Living_Room/lights/event" {
+	if lights.StateTopic != "digitalstrom/scene_events/1234/lights/event" {
 		t.Fatalf("unexpected state topic %s", lights.StateTopic)
 	}
 	if lights.Device.Name != "Living Room" {
@@ -123,5 +131,34 @@ func TestScenesDisabled(t *testing.T) {
 	configs, err := module.GetHomeAssistantEntities()
 	if err != nil || len(configs) != 0 {
 		t.Fatalf("expected no entities, got %v, %v", configs, err)
+	}
+}
+
+func TestScenesV1PayloadAndTopic(t *testing.T) {
+	module := newSceneTestModule()
+
+	named := module.buildV1Payload(digitalstrom.SceneEvent{
+		Event: digitalstrom.EventTypeCallScene, ZoneId: 1234, GroupId: 1, SceneId: 17,
+	}, "Movie")
+	expected := SceneEventV1{ZoneId: 1234, ZoneName: "Wohn Zimmer", GroupId: 1, GroupName: "light", SceneId: 17, SceneName: "Movie"}
+	if named != expected {
+		t.Fatalf("unexpected payload %+v", named)
+	}
+	if topic := module.sceneEventV1Topic(named); topic != "scenes/Wohn_Zimmer/Movie/event" {
+		t.Fatalf("unexpected topic %s", topic)
+	}
+	message, _ := json.Marshal(named)
+	if string(message) != `{"ZoneId":1234,"ZoneName":"Wohn Zimmer","GroupId":1,"GroupName":"light","SceneId":17,"SceneName":"Movie"}` {
+		t.Fatalf("unexpected message %s", message)
+	}
+
+	unnamed := module.buildV1Payload(digitalstrom.SceneEvent{
+		Event: digitalstrom.EventTypeCallScene, ZoneId: 0, GroupId: 0, SceneId: 72,
+	}, "")
+	if unnamed.ZoneName != "unnamed-zone-0" || unnamed.GroupName != "unknown" {
+		t.Fatalf("unexpected payload %+v", unnamed)
+	}
+	if topic := module.sceneEventV1Topic(unnamed); topic != "scenes/unnamed-zone-0/72/event" {
+		t.Fatalf("unexpected topic %s", topic)
 	}
 }

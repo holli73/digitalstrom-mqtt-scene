@@ -28,9 +28,9 @@ Power and energy consumption are now updated every 10 seconds instead of 30 seco
 
 ## Scenes
 
-Scene events are back since they are not part of the Smarthome API: they are read from the legacy JSON event API and
-published on `{prefix}/scenes/{zoneName}/{group}/event`. The topic and payload differ from version 1.x, see
-[Scene events](./README.md#scene-events).
+Scene events are back: since they are not part of the Smarthome API, they are read from the legacy JSON event API and
+published with the same topic and payload as version 1.x, see [Scene events](./README.md#scene-events). Button clicks
+are still not published.
 
 ## Buttons
 
