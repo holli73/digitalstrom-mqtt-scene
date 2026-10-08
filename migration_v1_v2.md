@@ -28,10 +28,9 @@ Power and energy consumption are now updated every 10 seconds instead of 30 seco
 
 ## Scenes
 
-Scenes event are not propagated anymore, so this was removed from the MQTT interface.
-
-Alternatively, if you want to interact with scene you can try to play with outputs. For instance, you can set an output
-to 99% instead of 100%, this way you could induce that a scene was called based on the output value of a device.
+Scene events are back since they are not part of the Smarthome API: they are read from the legacy JSON event API and
+published on `{prefix}/scenes/{zoneName}/{group}/event`. The topic and payload differ from version 1.x, see
+[Scene events](./README.md#scene-events).
 
 ## Buttons
 

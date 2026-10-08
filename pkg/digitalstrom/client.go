@@ -58,6 +58,8 @@ type client struct {
 	websocketConnectionOpen bool
 
 	notificationCallbacks map[string]NotificationCallback
+
+	sceneEvents *sceneEvents
 }
 
 // NewClient will create a DigitalStrom client with all the options specified in
@@ -75,6 +77,7 @@ func NewClient(options *ClientOptions) Client {
 		},
 		options:               *options,
 		notificationCallbacks: map[string]NotificationCallback{},
+		sceneEvents:           newSceneEvents(*options),
 	}
 }
 
@@ -159,6 +162,7 @@ func (c *client) Connect() error {
 // Disconnect stops all the ongoing calls and unsubscribe from the notification websocket
 func (c *client) Disconnect() error {
 	c.websocketConnectionOpen = false
+	c.sceneEvents.stop()
 	c.httpClient.CloseIdleConnections()
 	_ = c.websocketConnection.Close()
 	return nil

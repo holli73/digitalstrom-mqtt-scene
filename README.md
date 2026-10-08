@@ -60,6 +60,7 @@ variables.
 |          | INVERT_BLINDS_POSITION                 | 100% is fully close                                                              | false           |                             |
 |          | METERINGS_ENABLED                      | Whether to poll digitalSTROM metering values                                     | true            | false                       |
 |          | METERINGS_INTERVAL_SECONDS             | Polling interval for digitalSTROM metering values                                | 10              | 300                         |
+|          | SCENES_ENABLED                         | Publish digitalSTROM scene calls to MQTT (see [Scene events](#scene-events))      | true            | false                       |
 |          | HOME_ASSISTANT_DISCOVERY_ENABLED       | Whether or not publish MQTT Discovery messages for Home Assistant                | true            |                             |
 |          | HOME_ASSISTANT_DISCOVERY_PREFIX        | Topic prefix where to publish the MQTT Discovery messaged for Home Assistant     | `homeassistant` |                             |
 |          | HOME_ASSISTANT_REMOVE_REGEXP_FROM_NAME | Regular expression to remove from device names when announcing to Home Assistant |                 | `"(light\|cover)"`          
@@ -116,9 +117,49 @@ The topic format is as follows for the meterings:
 
 `{prefix}/meterings/{deviceName}/{channel}/state`
 
+The topic format is as follows for the scene events:
+
+`{prefix}/scenes/{zoneName}/{group}/event`
+
 The server status topic is
 
 `{prefix}/server/status`
+
+### Scene events
+
+Every scene call in digitalSTROM (wall switch, app, timer, apartment scenes like *absent* or *sleeping*, ...) is
+published as a non-retained JSON message on `{prefix}/scenes/{zoneName}/{group}/event`, for instance:
+
+```json
+{
+  "event_type": "preset1",
+  "event": "callScene",
+  "zone_id": 1234,
+  "zone": "Living Room",
+  "group_id": 1,
+  "group": "lights",
+  "scene_id": 5,
+  "scene": "preset1",
+  "scene_name": "Bright",
+  "forced": false,
+  "origin_id": "..."
+}
+```
+
+* `group` is the digitalSTROM color (`all`, `lights`, `shades`, `heating`, `audio`, `video`, `security`, `access`,
+  `joker`, ...). Apartment-wide scenes (`present`, `absent`, `sleeping`, `wakeup`, `door_bell`, `panic`, ...) are
+  published with zone `apartment` and group `all`.
+* `scene` is the standard digitalSTROM name of the scene number (`preset0` = off, `preset1` = on, `preset2`,
+  ..., `scene_<id>` for numbers without a standard name). `scene_name` is the custom name configured in digitalSTROM,
+  if any.
+* `undoScene` events are published with `"event_type": "undo"`.
+
+With Home Assistant discovery enabled, one [MQTT event entity](https://www.home-assistant.io/integrations/event.mqtt/)
+is created per zone and group (plus one for apartment scenes). They can be used directly as automation triggers.
+
+The Smarthome API does not expose scene calls, so this feature uses the legacy JSON event API of the dSS
+(`json/event/subscribe`), logging in with the configured API key (`json/system/loginApplication`). Set
+`SCENES_ENABLED=false` to disable it.
 
 ## How to run
 
