@@ -20,12 +20,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Set at build time with -ldflags "-X main.version=... -X main.commit=...".
-var (
-	version = "dev"
-	commit  = "none"
-)
-
 func main() {
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
@@ -181,7 +175,7 @@ func modeStandard() error {
 		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	}
 
-	log.Info().Str("version", version).Str("commit", commit).Msg("Starting DigitalStrom MQTT!")
+	log.Info().Msg("Starting DigitalStrom MQTT!")
 
 	// Initialize controller responsible for all the bridge logic.
 	ctrl := controller.NewController(config)

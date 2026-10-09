@@ -4,7 +4,6 @@ FROM --platform=$BUILDPLATFORM golang:1.25.0-alpine AS build
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG BUILD_VERSION
 
 WORKDIR /build
 
@@ -12,7 +11,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . ./
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o /out/digitalstrom-mqtt ./main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/digitalstrom-mqtt ./main.go
 
 FROM ${BUILD_FROM}
 

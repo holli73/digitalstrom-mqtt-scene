@@ -158,13 +158,3 @@ type DeviceTriggerConfig struct {
 	Type           string `json:"type"`
 	Subtype        string `json:"subtype"`
 }
-
-// Event configuration:
-// https://www.home-assistant.io/integrations/event.mqtt/
-type EventConfig struct {
-	BaseConfig
-	StateTopic    string   `json:"state_topic"`
-	EventTypes    []string `json:"event_types"`
-	Icon          string   `json:"icon,omitempty"`
-	ValueTemplate string   `json:"value_template,omitempty"`
-}
