@@ -55,6 +55,11 @@ type SceneEventListener interface {
 	ZoneName(zoneId int) (string, error)
 }
 
+// SceneCaller is implemented by clients that can call scenes.
+type SceneCaller interface {
+	CallScene(zoneId int, groupId int, sceneId int, force bool) error
+}
+
 type legacyResponse struct {
 	Ok      bool            `json:"ok"`
 	Message string          `json:"message"`
@@ -109,6 +114,10 @@ func (c *client) SceneName(zoneId int, groupId int, sceneId int) (string, error)
 
 func (c *client) ZoneName(zoneId int) (string, error) {
 	return c.sceneEvents.zoneName(zoneId)
+}
+
+func (c *client) CallScene(zoneId int, groupId int, sceneId int, force bool) error {
+	return c.sceneEvents.callScene(zoneId, groupId, sceneId, force)
 }
 
 func (s *sceneEvents) start(callback SceneEventCallback) error {
@@ -336,6 +345,37 @@ func (s *sceneEvents) zoneName(zoneId int) (string, error) {
 	s.nameCache[key] = name
 	s.mu.Unlock()
 	return name, nil
+}
+
+func (s *sceneEvents) callScene(zoneId int, groupId int, sceneId int, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	params := url.Values{}
+	params.Set("id", strconv.Itoa(zoneId))
+	params.Set("groupID", strconv.Itoa(groupId))
+	params.Set("sceneNumber", strconv.Itoa(sceneId))
+	if force {
+		params.Set("force", "true")
+	}
+	// The session may have expired since the last call, retry once with a
+	// new session.
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		var token string
+		if attempt == 0 {
+			token, err = s.currentToken(ctx)
+		} else {
+			token, err = s.login(ctx)
+		}
+		if err != nil {
+			return err
+		}
+		params.Set("token", token)
+		if _, err = s.request(ctx, "json/zone/callScene", params); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // request calls the legacy JSON API and returns the content of the "result"

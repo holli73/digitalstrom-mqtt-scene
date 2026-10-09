@@ -1,5 +1,5 @@
 name: digitalSTROM MQTT (scenes)
-version: "2.4.0-scene.2"
+version: "2.4.0-scene.3"
 slug: digitalstrom_mqtt_scene
 description: digitalSTROM MQTT bridge with scene events, built from the holli73/digitalstrom-mqtt-scene fork.
 url: "https://github.com/holli73/digitalstrom-mqtt-scene/tree/master/home-assistant-app"

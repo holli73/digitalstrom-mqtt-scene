@@ -2,10 +2,13 @@ package modules
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
 
+	mqtt_base "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/config"
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/digitalstrom"
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/homeassistant"
@@ -172,6 +175,7 @@ type ScenesModule struct {
 	enabled             bool
 	normalizeDeviceName bool
 	listener            digitalstrom.SceneEventListener
+	caller              digitalstrom.SceneCaller
 }
 
 func (c *ScenesModule) Start() error {
@@ -185,7 +189,25 @@ func (c *ScenesModule) Start() error {
 		return nil
 	}
 	c.listener = listener
-	return listener.SceneEventsStart(c.onSceneEvent)
+	if err := listener.SceneEventsStart(c.onSceneEvent); err != nil {
+		return err
+	}
+
+	caller, ok := c.dsClient.(digitalstrom.SceneCaller)
+	if !ok {
+		return nil
+	}
+	c.caller = caller
+	topic := path.Join(scenes, "+", "+", mqtt.Command)
+	return c.mqttClient.Subscribe(topic, func(_ mqtt_base.Client, message mqtt_base.Message) {
+		if err := c.onSceneCommand(message.Topic(), string(message.Payload())); err != nil {
+			log.Error().
+				Str("topic", message.Topic()).
+				Str("payload", string(message.Payload())).
+				Err(err).
+				Msg("Error handling scene command.")
+		}
+	})
 }
 
 func (c *ScenesModule) Stop() error {
@@ -325,6 +347,116 @@ func (c *ScenesModule) registryZoneName(zoneId int) string {
 
 func (c *ScenesModule) sceneEventTopic(zoneId int, group string) string {
 	return path.Join(sceneEvents, strconv.Itoa(zoneId), group, mqtt.Event)
+}
+
+// onSceneCommand handles a message on scenes/{zone}/{group}/command. The zone
+// is a zone name or id, the group a group name or id and the payload the
+// scene to call: a scene number, a standard scene name (preset1, ...) or the
+// custom name of the scene.
+func (c *ScenesModule) onSceneCommand(topic string, payload string) error {
+	parts := strings.Split(topic, "/")
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid scene command topic %s", topic)
+	}
+	zoneId, err := c.resolveZone(parts[len(parts)-3])
+	if err != nil {
+		return err
+	}
+	groupId, err := resolveGroup(parts[len(parts)-2])
+	if err != nil {
+		return err
+	}
+	sceneId, err := c.resolveScene(zoneId, groupId, payload)
+	if err != nil {
+		return err
+	}
+	log.Info().
+		Int("zoneId", zoneId).
+		Int("groupId", groupId).
+		Int("sceneId", sceneId).
+		Msg("Calling scene from MQTT command")
+	return c.caller.CallScene(zoneId, groupId, sceneId, false)
+}
+
+func (c *ScenesModule) resolveZone(value string) (int, error) {
+	if id, err := strconv.Atoi(value); err == nil {
+		return id, nil
+	}
+	if strings.EqualFold(value, "apartment") {
+		return apartmentZoneId, nil
+	}
+	if id, err := strconv.Atoi(strings.TrimPrefix(value, "unnamed-zone-")); err == nil {
+		return id, nil
+	}
+	zones, err := c.dsRegistry.GetZones()
+	if err != nil {
+		return 0, err
+	}
+	for _, zone := range zones {
+		id, err := strconv.Atoi(zone.ZoneId)
+		if err != nil {
+			continue
+		}
+		names := []string{zone.Attributes.Name}
+		if c.listener != nil {
+			if name, err := c.listener.ZoneName(id); err == nil {
+				names = append(names, name)
+			}
+		}
+		for _, name := range names {
+			if name != "" && (strings.EqualFold(value, name) || strings.EqualFold(value, normalizeForTopicName(name))) {
+				return id, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("unknown zone %s", value)
+}
+
+func resolveGroup(value string) (int, error) {
+	if id, err := strconv.Atoi(value); err == nil {
+		return id, nil
+	}
+	for _, names := range []map[int]string{sceneGroupNamesV1, sceneGroupNames} {
+		for id, name := range names {
+			if strings.EqualFold(value, name) {
+				return id, nil
+			}
+		}
+	}
+	if id, ok := sceneApplicationGroups[strings.ToLower(value)]; ok {
+		return id, nil
+	}
+	return 0, fmt.Errorf("unknown group %s", value)
+}
+
+func (c *ScenesModule) resolveScene(zoneId int, groupId int, value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, errors.New("empty scene")
+	}
+	if id, err := strconv.Atoi(value); err == nil {
+		if id < 0 || id > maxSceneId {
+			return 0, fmt.Errorf("scene number %d out of range", id)
+		}
+		return id, nil
+	}
+	for id := 0; id <= maxSceneId; id++ {
+		if strings.EqualFold(value, sceneKey(id)) {
+			return id, nil
+		}
+	}
+	if c.listener != nil {
+		for id := 0; id <= maxSceneId; id++ {
+			name, err := c.listener.SceneName(zoneId, groupId, id)
+			if err != nil {
+				return 0, err
+			}
+			if name != "" && (strings.EqualFold(value, name) || strings.EqualFold(value, normalizeForTopicName(name))) {
+				return id, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("unknown scene %s in zone %d, group %d", value, zoneId, groupId)
 }
 
 func groupName(groupId int) string {

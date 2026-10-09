@@ -107,3 +107,44 @@ func TestParseSceneEventIgnoresOtherEvents(t *testing.T) {
 		t.Fatal("expected event without scene id to be ignored")
 	}
 }
+
+func TestCallSceneRetriesWithNewSession(t *testing.T) {
+	var calls []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		query := request.URL.Query()
+		switch request.URL.Path {
+		case "/json/system/loginApplication":
+			calls = append(calls, "login")
+			_, _ = writer.Write([]byte(`{"ok":true,"result":{"token":"new-token"}}`))
+		case "/json/zone/callScene":
+			calls = append(calls, "callScene "+query.Get("token")+" "+query.Get("id")+"/"+query.Get("groupID")+"/"+query.Get("sceneNumber"))
+			if query.Get("token") != "new-token" {
+				writer.WriteHeader(http.StatusForbidden)
+				return
+			}
+			_, _ = writer.Write([]byte(`{"ok":true}`))
+		default:
+			t.Errorf("unexpected path %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	serverURL, _ := url.Parse(server.URL)
+	port, _ := strconv.Atoi(serverURL.Port())
+	events := newSceneEvents(ClientOptions{Host: serverURL.Hostname(), Port: port, ApiKey: "test-api-key"})
+	events.httpClient = server.Client()
+	events.token = "expired-token"
+
+	if err := events.callScene(1234, 1, 5, false); err != nil {
+		t.Fatalf("call scene: %v", err)
+	}
+	expected := []string{"callScene expired-token 1234/1/5", "login", "callScene new-token 1234/1/5"}
+	if len(calls) != len(expected) {
+		t.Fatalf("unexpected calls %v", calls)
+	}
+	for i := range expected {
+		if calls[i] != expected[i] {
+			t.Fatalf("unexpected calls %v", calls)
+		}
+	}
+}

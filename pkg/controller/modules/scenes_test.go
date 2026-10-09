@@ -162,3 +162,68 @@ func TestScenesV1PayloadAndTopic(t *testing.T) {
 		t.Fatalf("unexpected topic %s", topic)
 	}
 }
+
+type sceneCall struct {
+	zoneId, groupId, sceneId int
+}
+
+type sceneCallerStub struct {
+	calls []sceneCall
+}
+
+func (c *sceneCallerStub) CallScene(zoneId int, groupId int, sceneId int, _ bool) error {
+	c.calls = append(c.calls, sceneCall{zoneId, groupId, sceneId})
+	return nil
+}
+
+func TestScenesCommand(t *testing.T) {
+	tests := []struct {
+		topic   string
+		payload string
+		want    sceneCall
+	}{
+		{"digitalstrom/scenes/Living_Room/light/command", "5", sceneCall{1234, 1, 5}},
+		{"digitalstrom/scenes/living room/lights/command", "preset1", sceneCall{1234, 1, 5}},
+		{"digitalstrom/scenes/Wohn_Zimmer/shade/command", " Preset2 ", sceneCall{1234, 2, 17}},
+		{"digitalstrom/scenes/1234/1/command", "movie", sceneCall{1234, 1, 17}},
+		{"digitalstrom/scenes/apartment/all/command", "absent", sceneCall{0, 0, 72}},
+		{"digitalstrom/scenes/unnamed-zone-42/climate/command", "0", sceneCall{42, 3, 0}},
+	}
+	for _, test := range tests {
+		module := newSceneTestModule()
+		caller := &sceneCallerStub{}
+		module.caller = caller
+
+		if err := module.onSceneCommand(test.topic, test.payload); err != nil {
+			t.Fatalf("%s %q: %v", test.topic, test.payload, err)
+		}
+		if len(caller.calls) != 1 || caller.calls[0] != test.want {
+			t.Fatalf("%s %q: unexpected calls %v", test.topic, test.payload, caller.calls)
+		}
+	}
+}
+
+func TestScenesCommandErrors(t *testing.T) {
+	tests := []struct {
+		topic   string
+		payload string
+	}{
+		{"digitalstrom/scenes/Kitchen/light/command", "5"},
+		{"digitalstrom/scenes/Living_Room/garden/command", "5"},
+		{"digitalstrom/scenes/Living_Room/light/command", "Party"},
+		{"digitalstrom/scenes/Living_Room/light/command", "128"},
+		{"digitalstrom/scenes/Living_Room/light/command", ""},
+	}
+	for _, test := range tests {
+		module := newSceneTestModule()
+		caller := &sceneCallerStub{}
+		module.caller = caller
+
+		if err := module.onSceneCommand(test.topic, test.payload); err == nil {
+			t.Fatalf("%s %q: expected an error", test.topic, test.payload)
+		}
+		if len(caller.calls) != 0 {
+			t.Fatalf("%s %q: unexpected calls %v", test.topic, test.payload, caller.calls)
+		}
+	}
+}

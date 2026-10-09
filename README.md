@@ -119,7 +119,8 @@ The topic format is as follows for the meterings:
 
 The topic format is as follows for the scene events:
 
-`{prefix}/scenes/{zoneName}/{sceneName}/event` (see [Scene events](#scene-events))
+`{prefix}/scenes/{zoneName}/{sceneName}/event` and `{prefix}/scenes/{zone}/{group}/command` (see
+[Scene events](#scene-events))
 
 The server status topic is
 
@@ -152,8 +153,26 @@ With Home Assistant discovery enabled, these topics are exposed as one
 scenes). `event_type` is the standard name of the scene number (`preset0` = off, `preset1` = on, `preset2`, ...,
 `scene_<id>` for numbers without a standard name) or `undo` for `undoScene`.
 
-The Smarthome API does not expose scene calls, so this feature uses the legacy JSON event API of the dSS
-(`json/event/subscribe`), logging in with the configured API key (`json/system/loginApplication`). Set
+#### Calling scenes
+
+Scenes can be called by publishing the scene on `{prefix}/scenes/{zone}/{group}/command`:
+
+| part      | accepted values                                                                                                  |
+|-----------|------------------------------------------------------------------------------------------------------------------|
+| `{zone}`  | zone name as in the event topics (`Living_Room`, case-insensitive), zone id (`1234`) or `apartment`              |
+| `{group}` | group name (`light`/`lights`, `shade`/`shades`, `climate`/`heating`, `audio`, `video`, `all`, ...) or group id |
+| payload   | scene number (`5`, the `SceneId` of the events), standard scene name (`preset1`, `absent`, ...) or custom name   |
+
+For instance, to call "preset 1" (scene number 5) of the lights in the living room:
+
+```shell
+mosquitto_pub -t digitalstrom/scenes/Living_Room/light/command -m preset1
+```
+
+Note that a numeric payload is the raw digitalSTROM scene number: `1` is "area 1 off", "preset 1" is `5`.
+
+The Smarthome API does not expose scene calls, so this feature uses the legacy JSON API of the dSS
+(`json/event/subscribe`, `json/zone/callScene`), logging in with the configured API key (`json/system/loginApplication`). Set
 `SCENES_ENABLED=false` to disable it.
 
 ## How to run
