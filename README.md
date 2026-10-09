@@ -60,7 +60,7 @@ variables.
 |          | INVERT_BLINDS_POSITION                 | 100% is fully close                                                              | false           |                             |
 |          | METERINGS_ENABLED                      | Whether to poll digitalSTROM metering values                                     | true            | false                       |
 |          | METERINGS_INTERVAL_SECONDS             | Polling interval for digitalSTROM metering values                                | 10              | 300                         |
-|          | SCENES_ENABLED                         | Publish scene calls like version 1.x (uses the legacy dSS JSON API)              | false           | true                        |
+|          | SCENES_ENABLED                         | Publish and call scenes, events like v1.x (uses the legacy dSS JSON API)         | false           | true                        |
 |          | HOME_ASSISTANT_DISCOVERY_ENABLED       | Whether or not publish MQTT Discovery messages for Home Assistant                | true            |                             |
 |          | HOME_ASSISTANT_DISCOVERY_PREFIX        | Topic prefix where to publish the MQTT Discovery messaged for Home Assistant     | `homeassistant` |                             |
 |          | HOME_ASSISTANT_REMOVE_REGEXP_FROM_NAME | Regular expression to remove from device names when announcing to Home Assistant |                 | `"(light\|cover)"`          
@@ -124,6 +124,15 @@ The topic format is as follows for the scene events (only with `SCENES_ENABLED=t
 The topic and payload are the same as in version 1.x, but only `callScene` events are published (`buttonClick` and
 `model_ready` are not), and `+`, `#` and `/` in names are replaced by `_`. Scene calls are not part of the Smarthome
 API, so they are read from the legacy JSON API of the dSS.
+
+Scenes can be called (only with `SCENES_ENABLED=true`) by publishing the scene number on
+
+`{prefix}/zones/{zoneId}/{group}/scene/command`
+
+`{zoneId}` is the `ZoneId` of the scene events (`0` for the apartment), `{group}` is a `GroupName` of the scene events
+or `all`. For instance, `mosquitto_pub -t digitalstrom/zones/1234/light/scene/command -m 5` calls preset 1 of the
+lights. Retained commands are ignored. With Home Assistant discovery, the off and preset 1 to 4 scenes of each zone,
+and the apartment scenes, are also exposed as scene entities.
 
 The server status topic is
 

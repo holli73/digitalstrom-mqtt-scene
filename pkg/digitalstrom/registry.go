@@ -25,6 +25,10 @@ type Registry interface {
 	GetOutputsOfDevice(deviceId string) ([]Output, error)
 	GetOutputValuesOfDevice(deviceId string) ([]OutputValue, error)
 
+	// GetApartmentId returns the id of the apartment, unique per dSS.
+	GetApartmentId() string
+	GetZones() []Zone
+
 	GetControllers() ([]Controller, error)
 	GetControllerById(controllerId string) (Controller, error)
 	GetMeterings() ([]Metering, error)
@@ -175,6 +179,14 @@ func (r *registry) GetFunctionBlocksForDevice(deviceId string) ([]FunctionBlock,
 	}
 
 	return functionBlocks, nil
+}
+
+func (r *registry) GetApartmentId() string {
+	return r.apartment.ApartmentId
+}
+
+func (r *registry) GetZones() []Zone {
+	return r.apartment.Included.Zones
 }
 
 func (r *registry) GetControllers() ([]Controller, error) {

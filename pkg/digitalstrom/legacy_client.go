@@ -48,11 +48,18 @@ type SceneCall struct {
 
 type SceneCallCallback func(call SceneCall)
 
-// LegacyClient reads the scene calls from the legacy JSON API of the dSS.
+// LegacyClient reads and makes the scene calls with the legacy JSON API of
+// the dSS.
 type LegacyClient interface {
 	SceneCallsStart(callback SceneCallCallback) error
+	// SceneCallsStop stops reading the scene calls and closes the sessions.
 	SceneCallsStop()
+	CallScene(zoneId int, groupId int, sceneId int) error
 }
+
+// errLegacyUnauthorized is returned when the session token is not (or no
+// longer) valid.
+var errLegacyUnauthorized = errors.New("digitalSTROM JSON API session not authorized")
 
 type legacyResponse struct {
 	Ok      bool            `json:"ok"`
@@ -87,6 +94,11 @@ type legacyClient struct {
 	token      string
 	zoneNames  map[int]string
 	sceneNames map[sceneIdentifier]string
+
+	// Scene calls use their own session, so they never interfere with the
+	// subscription of the event loop.
+	callMu    sync.Mutex
+	callToken string
 }
 
 func NewLegacyClient(options *ClientOptions) LegacyClient {
@@ -129,6 +141,42 @@ func (c *legacyClient) SceneCallsStop() {
 	}
 	cancel()
 	<-done
+
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
+	c.logout(c.callToken)
+	c.callToken = ""
+}
+
+// CallScene calls a scene. The call is only retried, with a new session, when
+// the session was rejected: the scene was not called then.
+func (c *legacyClient) CallScene(zoneId int, groupId int, sceneId int) error {
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), legacyRequestTimeout)
+	defer cancel()
+	params := url.Values{}
+	params.Set("id", strconv.Itoa(zoneId))
+	params.Set("groupID", strconv.Itoa(groupId))
+	params.Set("sceneNumber", strconv.Itoa(sceneId))
+	for attempt := 0; ; attempt++ {
+		if c.callToken == "" {
+			token, err := c.login(ctx)
+			if err != nil {
+				return err
+			}
+			c.callToken = token
+		}
+		params.Set("token", c.callToken)
+		_, err := c.request(ctx, "json/zone/callScene", params)
+		if errors.Is(err, errLegacyUnauthorized) {
+			c.callToken = ""
+			if attempt == 0 {
+				continue
+			}
+		}
+		return err
+	}
 }
 
 func (c *legacyClient) run(ctx context.Context, callback SceneCallCallback) {
@@ -190,22 +238,41 @@ func (c *legacyClient) run(ctx context.Context, callback SceneCallCallback) {
 	}
 }
 
-func (c *legacyClient) subscribe(ctx context.Context) error {
+func (c *legacyClient) login(ctx context.Context) (string, error) {
 	params := url.Values{}
 	params.Set("loginToken", c.options.ApiKey)
 	result, err := c.request(ctx, "json/system/loginApplication", params)
 	if err != nil {
-		return fmt.Errorf("error logging in on the digitalSTROM JSON API: %w", err)
+		return "", fmt.Errorf("error logging in on the digitalSTROM JSON API: %w", err)
 	}
 	var login struct {
 		Token string `json:"token"`
 	}
 	if err := json.Unmarshal(result, &login); err != nil || login.Token == "" {
-		return errors.New("no session token returned by json/system/loginApplication")
+		return "", errors.New("no session token returned by json/system/loginApplication")
 	}
-	c.token = login.Token
+	return login.Token, nil
+}
 
-	params = url.Values{}
+func (c *legacyClient) logout(token string) {
+	if token == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	params := url.Values{}
+	params.Set("token", token)
+	_, _ = c.request(ctx, "json/system/logout", params)
+}
+
+func (c *legacyClient) subscribe(ctx context.Context) error {
+	token, err := c.login(ctx)
+	if err != nil {
+		return err
+	}
+	c.token = token
+
+	params := url.Values{}
 	params.Set("name", string(EventTypeCallScene))
 	params.Set("subscriptionID", strconv.Itoa(c.subscriptionId))
 	params.Set("token", c.token)
@@ -228,9 +295,7 @@ func (c *legacyClient) closeSession() {
 	params.Set("subscriptionID", strconv.Itoa(c.subscriptionId))
 	params.Set("token", c.token)
 	_, _ = c.request(ctx, "json/event/unsubscribe", params)
-	params = url.Values{}
-	params.Set("token", c.token)
-	_, _ = c.request(ctx, "json/system/logout", params)
+	c.logout(c.token)
 	c.token = ""
 }
 
@@ -335,6 +400,9 @@ func (c *legacyClient) request(ctx context.Context, path string, params url.Valu
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading the response of %s: %w", path, err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("%w: %w", errLegacyUnauthorized, responseError(resp.StatusCode))
 	}
 	if resp.StatusCode >= 300 {
 		return nil, responseError(resp.StatusCode)

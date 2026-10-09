@@ -154,3 +154,54 @@ func TestLegacyClientNameDecodeErrorIsNotCached(t *testing.T) {
 		t.Fatalf("got %q, %v", name, err)
 	}
 }
+
+func TestLegacyClientCallScene(t *testing.T) {
+	var mu sync.Mutex
+	logins := 0
+	var calls []string
+	callStatus := http.StatusForbidden
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		query := request.URL.Query()
+		switch request.URL.Path {
+		case "/json/system/loginApplication":
+			logins++
+			_, _ = writer.Write([]byte(`{"ok":true,"result":{"token":"token-` + strconv.Itoa(logins) + `"}}`))
+		case "/json/zone/callScene":
+			calls = append(calls, query.Get("token")+" "+query.Get("id")+"/"+query.Get("groupID")+"/"+query.Get("sceneNumber"))
+			if query.Get("token") == "token-1" {
+				// Expired session: the scene was not called.
+				writer.WriteHeader(callStatus)
+				return
+			}
+			if query.Get("id") == "9999" {
+				_, _ = writer.Write([]byte(`{"ok":false,"message":"Could not find zone"}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"ok":true}`))
+		case "/json/system/logout":
+			_, _ = writer.Write([]byte(`{"ok":true}`))
+		default:
+			t.Errorf("unexpected path %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := newTestLegacyClient(t, server, "test-api-key")
+
+	if err := client.CallScene(1234, 1, 5); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	// A rejected call is not retried, and keeps the session.
+	if err := client.CallScene(9999, 1, 5); err == nil {
+		t.Fatal("expected an error")
+	}
+	client.SceneCallsStop()
+
+	mu.Lock()
+	defer mu.Unlock()
+	expected := []string{"token-1 1234/1/5", "token-2 1234/1/5", "token-2 9999/1/5"}
+	if strings.Join(calls, ",") != strings.Join(expected, ",") || logins != 2 {
+		t.Fatalf("unexpected calls %v with %d logins", calls, logins)
+	}
+}
