@@ -18,7 +18,10 @@ WORKDIR /build
 RUN echo "Fetching ${SOURCE_REPO}@${SOURCE_REF} for ${BUILD_VERSION}" \
   && git clone --depth 1 --branch "${SOURCE_REF}" "${SOURCE_REPO}" .
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/digitalstrom-mqtt ./main.go
+RUN COMMIT="$(git rev-parse --short HEAD)" \
+  && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev} -X main.commit=${COMMIT}" \
+    -o /out/digitalstrom-mqtt ./main.go
 
 FROM ${BUILD_FROM}
 
