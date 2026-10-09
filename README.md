@@ -171,6 +171,15 @@ mosquitto_pub -t digitalstrom/scenes/Living_Room/light/command -m preset1
 
 Note that a numeric payload is the raw digitalSTROM scene number: `1` is "area 1 off", "preset 1" is `5`.
 
+With Home Assistant discovery enabled, the scenes are also exposed as
+[MQTT scene entities](https://www.home-assistant.io/integrations/scene.mqtt/) on the device of each zone:
+
+* for the lights, shades, audio, video and joker groups of each zone: *Off* and *Preset 1* to *Preset 4*. Presets 2 to
+  4 are disabled by default unless they have a custom name in digitalSTROM, and can be enabled in Home Assistant;
+* for the apartment: *Present*, *Absent*, *Sleeping*, *Wakeup*, *Standby*, *Deep off* and *Door bell*.
+
+Scenes with a custom name in digitalSTROM use that name.
+
 The Smarthome API does not expose scene calls, so this feature uses the legacy JSON API of the dSS
 (`json/event/subscribe`, `json/zone/callScene`), logging in with the configured API key (`json/system/loginApplication`). Set
 `SCENES_ENABLED=false` to disable it.

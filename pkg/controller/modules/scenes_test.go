@@ -3,6 +3,7 @@ package modules
 import (
 	"encoding/json"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/digitalstrom"
@@ -84,35 +85,47 @@ func TestScenesBuildPayloadUndoAndUnknownZone(t *testing.T) {
 
 func TestScenesHomeAssistantEntities(t *testing.T) {
 	module := newSceneTestModule()
+	module.caller = &sceneCallerStub{}
 
 	configs, err := module.GetHomeAssistantEntities()
 	if err != nil {
 		t.Fatalf("get entities: %v", err)
 	}
 
-	var ids []string
+	byId := map[string]homeassistant.DiscoveryConfig{}
+	var events []string
+	scenes := 0
 	for _, cfg := range configs {
-		if cfg.Domain != homeassistant.Event {
+		byId[cfg.DeviceId+"/"+cfg.ObjectId] = cfg
+		switch cfg.Domain {
+		case homeassistant.Event:
+			events = append(events, cfg.DeviceId+"/"+cfg.ObjectId)
+		case homeassistant.Scene:
+			scenes++
+		default:
 			t.Fatalf("unexpected domain %s", cfg.Domain)
 		}
-		ids = append(ids, cfg.DeviceId+"/"+cfg.ObjectId)
 	}
-	expected := []string{
+	expectedEvents := []string{
 		"digitalstrom_zone_0/scene_all",
 		"digitalstrom_zone_1234/scene_all",
 		"digitalstrom_zone_1234/scene_lights",
 		"digitalstrom_zone_1234/scene_shades",
 	}
-	if len(ids) != len(expected) {
-		t.Fatalf("unexpected entities %v", ids)
+	if len(events) != len(expectedEvents) {
+		t.Fatalf("unexpected event entities %v", events)
 	}
-	for i := range expected {
-		if ids[i] != expected[i] {
-			t.Fatalf("unexpected entities %v", ids)
+	for i := range expectedEvents {
+		if events[i] != expectedEvents[i] {
+			t.Fatalf("unexpected event entities %v", events)
 		}
 	}
+	// 7 apartment scenes, 5 presets for lights and shades each.
+	if scenes != 7+5+5 {
+		t.Fatalf("unexpected number of scene entities %d", scenes)
+	}
 
-	lights := configs[2].Config.(*homeassistant.EventConfig)
+	lights := byId["digitalstrom_zone_1234/scene_lights"].Config.(*homeassistant.EventConfig)
 	if lights.StateTopic != "digitalstrom/scene_events/1234/lights/event" {
 		t.Fatalf("unexpected state topic %s", lights.StateTopic)
 	}
@@ -121,6 +134,50 @@ func TestScenesHomeAssistantEntities(t *testing.T) {
 	}
 	if len(lights.EventTypes) != maxSceneId+2 || lights.EventTypes[5] != "preset1" || lights.EventTypes[maxSceneId+1] != "undo" {
 		t.Fatalf("unexpected event types %v", lights.EventTypes)
+	}
+
+	tests := []struct {
+		id      string
+		name    string
+		payload string
+		enabled bool
+	}{
+		{"digitalstrom_zone_1234/scene_lights_0", "Lights Off", "0", true},
+		{"digitalstrom_zone_1234/scene_lights_5", "Lights Preset 1", "5", true},
+		{"digitalstrom_zone_1234/scene_lights_17", "Lights Movie", "17", true},
+		{"digitalstrom_zone_1234/scene_lights_18", "Lights Preset 3", "18", false},
+		{"digitalstrom_zone_0/scene_all_72", "Absent", "72", true},
+	}
+	for _, test := range tests {
+		cfg, ok := byId[test.id]
+		if !ok {
+			t.Fatalf("missing scene entity %s", test.id)
+		}
+		scene := cfg.Config.(*homeassistant.SceneConfig)
+		if scene.Name != test.name || scene.PayloadOn != test.payload || scene.EnabledByDefault != test.enabled {
+			t.Fatalf("%s: unexpected scene %+v", test.id, scene)
+		}
+		zone := strings.SplitN(strings.TrimPrefix(test.id, "digitalstrom_zone_"), "/", 2)[0]
+		if !strings.HasPrefix(scene.CommandTopic, "digitalstrom/scenes/"+zone+"/") || !strings.HasSuffix(scene.CommandTopic, "/command") {
+			t.Fatalf("%s: unexpected command topic %s", test.id, scene.CommandTopic)
+		}
+	}
+	if topic := byId["digitalstrom_zone_1234/scene_shades_0"].Config.(*homeassistant.SceneConfig).CommandTopic; topic != "digitalstrom/scenes/1234/2/command" {
+		t.Fatalf("unexpected shades command topic %s", topic)
+	}
+}
+
+func TestScenesHomeAssistantEntitiesWithoutCaller(t *testing.T) {
+	module := newSceneTestModule()
+
+	configs, err := module.GetHomeAssistantEntities()
+	if err != nil {
+		t.Fatalf("get entities: %v", err)
+	}
+	for _, cfg := range configs {
+		if cfg.Domain == homeassistant.Scene {
+			t.Fatalf("unexpected scene entity %s", cfg.ObjectId)
+		}
 	}
 }
 

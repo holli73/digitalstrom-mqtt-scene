@@ -136,6 +136,30 @@ var standardSceneNames = map[int]string{
 
 const maxSceneId = 127
 
+// Groups for which Home Assistant scene entities are created.
+var sceneEntityGroups = map[int]bool{1: true, 2: true, 4: true, 5: true, 8: true}
+
+// Zone scenes exposed as Home Assistant scene entities: off and presets 1-4.
+var zoneSceneEntities = []int{0, 5, 17, 18, 19}
+
+// Apartment scenes exposed as Home Assistant scene entities.
+var apartmentSceneEntities = []int{71, 72, 69, 70, 67, 68, 73}
+
+var sceneEntityLabels = map[int]string{
+	0:  "Off",
+	5:  "Preset 1",
+	17: "Preset 2",
+	18: "Preset 3",
+	19: "Preset 4",
+	67: "Standby",
+	68: "Deep off",
+	69: "Sleeping",
+	70: "Wakeup",
+	71: "Present",
+	72: "Absent",
+	73: "Door bell",
+}
+
 // SceneEventV1 is the scene call message of version 1.x, published on
 // scenes/{zoneName}/{sceneName or sceneId}/event. Field names are kept as is
 // (no JSON tags) to stay compatible with existing consumers.
@@ -488,6 +512,11 @@ func (c *ScenesModule) GetHomeAssistantEntities() ([]homeassistant.DiscoveryConf
 	configs := []homeassistant.DiscoveryConfig{
 		c.eventEntity(apartmentZoneId, broadcastGroup),
 	}
+	if c.caller != nil {
+		for _, sceneId := range apartmentSceneEntities {
+			configs = append(configs, c.sceneEntity(apartmentZoneId, broadcastGroup, sceneId))
+		}
+	}
 
 	zones, err := c.dsRegistry.GetZones()
 	if err != nil {
@@ -507,15 +536,75 @@ func (c *ScenesModule) GetHomeAssistantEntities() ([]homeassistant.DiscoveryConf
 			}
 			seen[groupId] = true
 			configs = append(configs, c.eventEntity(zoneId, groupId))
+			if c.caller != nil && sceneEntityGroups[groupId] {
+				for _, sceneId := range zoneSceneEntities {
+					configs = append(configs, c.sceneEntity(zoneId, groupId, sceneId))
+				}
+			}
 		}
 	}
 	return configs, nil
 }
 
-func (c *ScenesModule) eventEntity(zoneId int, groupId int) homeassistant.DiscoveryConfig {
-	zoneName := c.zoneName(zoneId)
+func zoneDeviceId(zoneId int) string {
+	return fmt.Sprintf("digitalstrom_zone_%d", zoneId)
+}
+
+func (c *ScenesModule) zoneDevice(zoneId int) homeassistant.Device {
+	return homeassistant.Device{
+		Identifiers: []string{zoneDeviceId(zoneId)},
+		Model:       "Zone",
+		Name:        c.zoneName(zoneId),
+	}
+}
+
+// sceneEntity creates a Home Assistant scene calling the given scene. Presets
+// 2 to 4 are only enabled by default if they have a custom name.
+func (c *ScenesModule) sceneEntity(zoneId int, groupId int, sceneId int) homeassistant.DiscoveryConfig {
+	deviceId := zoneDeviceId(zoneId)
 	group := groupName(groupId)
-	deviceId := fmt.Sprintf("digitalstrom_zone_%d", zoneId)
+	objectId := fmt.Sprintf("scene_%s_%d", group, sceneId)
+
+	label := sceneEntityLabels[sceneId]
+	customName := ""
+	if c.listener != nil {
+		name, err := c.listener.SceneName(zoneId, groupId, sceneId)
+		if err != nil {
+			log.Debug().Err(err).Msg("Unable to get scene name")
+		}
+		customName = name
+	}
+	if customName != "" {
+		label = customName
+	}
+	name := label
+	if zoneId != apartmentZoneId {
+		name = strings.ToUpper(group[:1]) + group[1:] + " " + label
+	}
+	enabled := customName != "" || sceneId == 0 || sceneId == 5 || zoneId == apartmentZoneId
+
+	return homeassistant.DiscoveryConfig{
+		Domain:   homeassistant.Scene,
+		DeviceId: deviceId,
+		ObjectId: objectId,
+		Config: &homeassistant.SceneConfig{
+			BaseConfig: homeassistant.BaseConfig{
+				Device:   c.zoneDevice(zoneId),
+				Name:     name,
+				UniqueId: deviceId + "_" + objectId,
+			},
+			CommandTopic: c.mqttClient.GetFullTopic(
+				path.Join(scenes, strconv.Itoa(zoneId), strconv.Itoa(groupId), mqtt.Command)),
+			PayloadOn:        strconv.Itoa(sceneId),
+			Icon:             "mdi:palette",
+			EnabledByDefault: enabled,
+		},
+	}
+}
+
+func (c *ScenesModule) eventEntity(zoneId int, groupId int) homeassistant.DiscoveryConfig {
+	group := groupName(groupId)
+	deviceId := zoneDeviceId(zoneId)
 	objectId := "scene_" + group
 	return homeassistant.DiscoveryConfig{
 		Domain:   homeassistant.Event,
@@ -523,11 +612,7 @@ func (c *ScenesModule) eventEntity(zoneId int, groupId int) homeassistant.Discov
 		ObjectId: objectId,
 		Config: &homeassistant.EventConfig{
 			BaseConfig: homeassistant.BaseConfig{
-				Device: homeassistant.Device{
-					Identifiers: []string{deviceId},
-					Model:       "Zone",
-					Name:        zoneName,
-				},
+				Device:   c.zoneDevice(zoneId),
 				Name:     group + " scene",
 				UniqueId: deviceId + "_" + objectId,
 			},
