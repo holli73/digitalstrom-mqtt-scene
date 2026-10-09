@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.0-scene.5
+
+- Logs the App version and the built commit at startup.
+
+## 2.4.0-scene.4
+
+- Creates Home Assistant scene entities per zone (off and presets 1-4 for lights, shades,
+  audio, video and joker) and for the main apartment scenes. Custom scene names are used
+  when set; unnamed presets 2-4 are disabled by default.
+
+## 2.4.0-scene.3
+
+- Calls digitalSTROM scenes from MQTT on `digitalstrom/scenes/{zone}/{group}/command`
+  (payload: scene number, standard name like `preset1`, or custom scene name).
+
+## 2.4.0-scene.2
+
+- Publishes scene events with the topic and payload of version 1.x on
+  `digitalstrom/scenes/{zoneName}/{sceneName}/event`.
+- Moves the Home Assistant event entities to `digitalstrom/scene_events/{zoneId}/{group}/event`.
+
+## 2.4.0-scene.1
+
+- Publishes digitalSTROM scene calls to MQTT and exposes them as Home Assistant event entities.
+- Builds the App from the source of the holli73/digitalstrom-mqtt-scene fork.
+
 ## 2.4.0-haos.1
 
 - Initial native Home Assistant App package.
