@@ -1,19 +1,9 @@
 # Changelog
 
-## 2.4.0-scene.6
+## 2.4.0-scene.7
 
-- Reworked after the upstream review (gaetancollaud/digitalstrom-mqtt#70). The App option
-  "Enable scenes" turns the feature on and off; it is on by default in this App.
-- Scene events are exactly as in version 1.x: unnamed scenes are published as
-  `unnamed-scene-{id}`, the retain flag follows the MQTT configuration, and only `callScene`
-  events are published. `+`, `#` and `/` in names are replaced by `_`.
-- Scenes are called on `digitalstrom/zones/{zoneId}/{group}/scene/command` with the scene
-  number as payload (e.g. `zones/1234/light/scene/command` with `5`). The old
-  `scenes/{zone}/{group}/command` topic and the `scene_events` topic are removed.
-- Home Assistant scene entities have new ids (scoped to the apartment) and use the standard
-  scene names; the scene event entities are removed.
-- The API key is no longer logged on connection errors, failures back off up to 5 minutes,
-  and legacy API sessions are logged out.
+- Goes back to the code of 2.4.0-scene.5 to check a regression of 2.4.0-scene.6. The
+  reworked version stays on the `scene-calls` branch.
 
 ## 2.4.0-scene.5
 

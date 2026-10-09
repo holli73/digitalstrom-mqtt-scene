@@ -1,5 +1,5 @@
 name: digitalSTROM MQTT (scenes)
-version: "2.4.0-scene.6"
+version: "2.4.0-scene.7"
 slug: digitalstrom_mqtt_scene
 description: digitalSTROM MQTT bridge with scene events, built from the holli73/digitalstrom-mqtt-scene fork.
 url: "https://github.com/holli73/digitalstrom-mqtt-scene/tree/master/home-assistant-app"
@@ -23,7 +23,6 @@ options:
   invert_blinds_position: false
   meterings_enabled: true
   meterings_interval_seconds: 10
-  scenes_enabled: true
   log_level: INFO
   regenerate_api_key: false
 schema:
@@ -39,6 +38,5 @@ schema:
   invert_blinds_position: bool
   meterings_enabled: bool
   meterings_interval_seconds: "int(1,)"
-  scenes_enabled: bool
   log_level: "list(TRACE|DEBUG|INFO|WARN|ERROR)"
   regenerate_api_key: bool

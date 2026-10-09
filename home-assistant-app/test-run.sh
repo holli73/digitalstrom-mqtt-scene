@@ -442,7 +442,6 @@ SCRIPT
             invert_blinds_position) printf 'false' ;;
             meterings_enabled) printf 'true' ;;
             meterings_interval_seconds) printf '10' ;;
-            scenes_enabled) printf 'false' ;;
             log_level) printf 'INFO' ;;
             *) return 1 ;;
         esac
@@ -513,7 +512,6 @@ SCRIPT
             invert_blinds_position) printf 'false' ;;
             meterings_enabled) printf 'true' ;;
             meterings_interval_seconds) printf '10' ;;
-            scenes_enabled) printf 'false' ;;
             log_level) printf 'INFO' ;;
             *) return 1 ;;
         esac
@@ -606,7 +604,6 @@ test_configuration_applies_bashio_log_level() {
             invert_blinds_position) printf 'false' ;;
             meterings_enabled) printf 'true' ;;
             meterings_interval_seconds) printf '10' ;;
-            scenes_enabled) printf 'false' ;;
             log_level) printf 'DEBUG' ;;
             *) return 1 ;;
         esac
@@ -633,7 +630,6 @@ test_configuration_caps_bashio_trace_at_debug() {
             invert_blinds_position) printf 'false' ;;
             meterings_enabled) printf 'true' ;;
             meterings_interval_seconds) printf '10' ;;
-            scenes_enabled) printf 'false' ;;
             log_level) printf 'TRACE' ;;
             *) return 1 ;;
         esac
