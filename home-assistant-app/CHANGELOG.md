@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-scene.8
+
+- The reworked version of 2.4.0-scene.6 again, with two fixes:
+  - Scene events are never retained, so subscribers (e.g. Node-RED) don't replay old scene
+    calls when they connect.
+  - The group of a scene call is also read from the event source, so group calls that only
+    carry it there are published with their `GroupName` (e.g. `light`) instead of `unknown`.
+- Scene events are as in version 1.x: scenes without a custom name are published as
+  `unnamed-scene-{id}`, and only `callScene` events are published.
+- Scenes are called on `digitalstrom/zones/{zoneId}/{group}/scene/command` with the scene
+  number as payload. Home Assistant scene entities have new ids, and the scene event
+  entities are removed.
+- Raw digitalSTROM events are logged at the DEBUG log level.
+
 ## 2.4.0-scene.7
 
 - Goes back to the code of 2.4.0-scene.5 to check a regression of 2.4.0-scene.6. The
