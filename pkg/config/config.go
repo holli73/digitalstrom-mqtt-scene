@@ -91,7 +91,7 @@ var defaultConfig = map[string]interface{}{
 	envKeyInvertBlindsPosition:              false,
 	envKeyMeteringsEnabled:                  true,
 	envKeyMeteringsInterval:                 10,
-	envKeyScenesEnabled:                     true,
+	envKeyScenesEnabled:                     false,
 	envKeyHomeAssistantDiscoveryEnabled:     true,
 	envKeyHomeAssistantDiscoveryPrefix:      "homeassistant",
 	envKeyHomeAssistantRemoveRegexpFromName: "",
