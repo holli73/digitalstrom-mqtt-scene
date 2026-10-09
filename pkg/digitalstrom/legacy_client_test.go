@@ -49,6 +49,7 @@ func TestLegacyClientSceneCalls(t *testing.T) {
 					{"name":"callScene","properties":{"sceneID":"17","groupID":"1","zoneID":"9999"},"source":{"zoneID":1234,"groupID":1}},
 					{"name":"callScene","properties":{"sceneID":"72","groupID":"0"},"source":{"zoneID":0,"isApartment":true}},
 					{"name":"callScene","properties":{"sceneID":"5"},"source":{"zoneID":1234,"isDevice":true}},
+					{"name":"callScene","properties":{"sceneID":"0"},"source":{"zoneID":1234,"groupID":1,"isGroup":true}},
 					{"name":"callScene","properties":{"sceneID":"5","groupID":"1"},"source":{"zoneID":666}},
 					{"name":"undoScene","properties":{"sceneID":"5","groupID":"1"},"source":{"zoneID":1234}}
 				]}}`))
@@ -83,7 +84,7 @@ func TestLegacyClientSceneCalls(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	var got []SceneCall
-	for len(got) < 3 {
+	for len(got) < 4 {
 		select {
 		case call := <-received:
 			got = append(got, call)
@@ -99,6 +100,8 @@ func TestLegacyClientSceneCalls(t *testing.T) {
 		{ZoneId: 0, ZoneName: "unnamed-zone-0", GroupId: 0, SceneId: 72, SceneName: "unnamed-scene-72"},
 		// Calls without a group have the group -1 and no scene name.
 		{ZoneId: 1234, ZoneName: " Living Room", GroupId: -1, SceneId: 5, SceneName: ""},
+		// The group is read from the source when the properties don't have it.
+		{ZoneId: 1234, ZoneName: " Living Room", GroupId: 1, SceneId: 0, SceneName: "unnamed-scene-0"},
 	}
 	for i := range expected {
 		if got[i] != expected[i] {

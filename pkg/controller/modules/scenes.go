@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/config"
 	"github.com/gaetancollaud/digitalstrom-mqtt/pkg/digitalstrom"
@@ -11,7 +12,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const scenes string = "scenes"
+const (
+	scenes         string = "scenes"
+	publishTimeout        = 10 * time.Second
+)
 
 // Group names used by the scene events of version 1.x.
 var sceneGroupNames = map[int]string{
@@ -94,9 +98,12 @@ func (c *ScenesModule) onSceneCall(call digitalstrom.SceneCall) {
 		log.Error().Err(err).Msg("Error serializing scene event")
 		return
 	}
-	topic := c.sceneEventTopic(event)
-	if err := c.mqttClient.Publish(topic, message); err != nil {
-		log.Error().Err(err).Str("topic", topic).Msg("Error publishing scene event")
+	// Events are never retained: a retained event would be replayed, and the
+	// scene applied again, by every client subscribing later.
+	topic := c.mqttClient.GetFullTopic(c.sceneEventTopic(event))
+	t := c.mqttClient.RawClient().Publish(topic, mqtt.QOS, false, message)
+	if t.WaitTimeout(publishTimeout) && t.Error() != nil {
+		log.Error().Err(t.Error()).Str("topic", topic).Msg("Error publishing scene event")
 	}
 }
 

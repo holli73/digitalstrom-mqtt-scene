@@ -166,6 +166,11 @@ func (c *legacyClient) run(ctx context.Context, callback SceneCallCallback) {
 		}
 		delay = legacyRetryMinDelay
 		for _, event := range events {
+			log.Debug().
+				Str("name", event.Name).
+				Interface("properties", event.Properties).
+				Interface("source", event.Source).
+				Msg("digitalSTROM event received")
 			call, ok := parseSceneCall(event)
 			if !ok {
 				continue
@@ -346,7 +351,8 @@ func (c *legacyClient) request(ctx context.Context, path string, params url.Valu
 
 // parseSceneCall reads a callScene event like version 1.x: the zone comes
 // from the source, and calls without a group (e.g. device scene calls) have
-// the group -1.
+// the group -1. Unlike version 1.x, the group is also read from the source:
+// some group calls (e.g. from sensors) only carry it there.
 func parseSceneCall(event legacyEvent) (SceneCall, bool) {
 	if EventType(event.Name) != EventTypeCallScene {
 		return SceneCall{}, false
@@ -360,6 +366,9 @@ func parseSceneCall(event legacyEvent) (SceneCall, bool) {
 		return SceneCall{}, false
 	}
 	groupId, ok := intField(event.Properties, "groupID")
+	if !ok {
+		groupId, ok = intField(event.Source, "groupID")
+	}
 	if !ok {
 		groupId = legacyNoGroup
 	}
