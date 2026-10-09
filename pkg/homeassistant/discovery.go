@@ -19,6 +19,7 @@ const (
 	DeviceAutomation Domain = "device_automation"
 	Cover            Domain = "cover"
 	Scene            Domain = "scene"
+	Event            Domain = "event"
 	DeviceTrigger    Domain = "device_automation"
 )
 
